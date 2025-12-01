@@ -9,5 +9,6 @@ serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "net"] }
 tower-http = { version = "0.6", features = ["fs"] }
 rusqlite = { version = "0.37.0", features = ["bundled"] }
-
+ollama-rs = "0.3.3"
+serde_json = "1.0.145"
 

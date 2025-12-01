@@ -1,8 +1,14 @@
+use std::error::Error;
+
 use axum::{
     Router,
     extract::Form,
     response::Html,
     routing::{get, post},
+};
+use ollama_rs::{
+    Ollama,
+    generation::{completion::request::GenerationRequest, parameters::FormatType},
 };
 use rusqlite::{Connection, params};
 use serde::Deserialize;
@@ -60,6 +66,16 @@ struct InputForm {
     bin_select: Option<String>,
     bin_new: Option<String>,
     location: Option<String>,
+}
+#[derive(Debug, Deserialize)]
+struct ParsedInventory {
+    items: Vec<ParsedItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ParsedItem {
+    name: String,
+    quantity: i32,
 }
 
 async fn show_form() -> Html<String> {
@@ -127,7 +143,20 @@ async fn handle_submit(Form(input): Form<InputForm>) -> Html<String> {
     let bin_id = choose_bin(input.bin_select, input.bin_new);
     let location = normalize_optional(input.location);
 
-    let items = fake_llm_parse(&input.text, bin_id.clone(), location.clone());
+    let items = match llm_parse(&input.text, bin_id.clone(), location.clone()).await {
+        Ok(items) => items,
+        Err(e) => {
+            eprintln!("LLM parse failed: {e}");
+            eprintln!("Storing as single raw entry");
+
+            vec![Item {
+                name: input.text.trim().to_string(),
+                quantity: 1,
+                bin_id: bin_id.clone(),
+                location: location.clone(),
+            }]
+        }
+    };
 
     if let Err(e) = save_items_to_db(&items) {
         eprintln!("Failed to save to DB: {e}");
@@ -163,39 +192,76 @@ async fn handle_submit(Form(input): Form<InputForm>) -> Html<String> {
     Html(html)
 }
 
-fn fake_llm_parse(raw: &str, bin_id: Option<String>, location: Option<String>) -> Vec<Item> {
-    raw.lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(|line| {
-            let mut parts = line.split_whitespace();
-            let first = parts.next().unwrap_or("");
+async fn llm_parse(
+    raw: &str,
+    bin_id: Option<String>,
+    location: Option<String>,
+) -> Result<Vec<Item>, Box<dyn Error + Send + Sync>> {
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!("LLM Parse called");
+    println!("Raw input text:\n{}", raw);
+    println!("Bin ID: {:?}", bin_id);
+    println!("Location: {:?}", location);
+    let ollama = Ollama::default();
 
-            if let Ok(qty) = first
-                .trim_end_matches(|c: char| !c.is_ascii_digit())
-                .parse::<i32>()
-            {
-                let name = parts.collect::<Vec<_>>().join(" ");
-                Item {
-                    name: if name.is_empty() {
-                        line.to_string()
-                    } else {
-                        name
-                    },
-                    quantity: qty,
-                    bin_id: bin_id.clone(),
-                    location: location.clone(),
-                }
-            } else {
-                Item {
-                    name: line.to_string(),
-                    quantity: 1,
-                    bin_id: bin_id.clone(),
-                    location: location.clone(),
-                }
-            }
+    let prompt = format!(
+        r#"
+You parse messy inventory text into structured data.
+
+Input text will be multiple lines like:
+
+  3 boxes of nails
+  hammer
+  10 screws
+
+Rules:
+- Split the text into separate items.
+- Each item must have:
+  - quantity: integer >= 1
+  - name: short name for the object (no extra commentary)
+- If the line starts with a number, use that as quantity.
+- Otherwise, default quantity to 1.
+
+Return ONLY JSON, no explanations, exactly in this shape:
+
+{{
+  "items": [
+    {{ "name": "hammer", "quantity": 1 }},
+    {{ "name": "box of nails", "quantity": 3 }}
+  ]
+}}
+
+Now parse this input:
+
+\"\"\"{raw}\"\"\" 
+"#,
+    );
+
+    println!("Sending prompt to Ollama:\n{}", prompt);
+
+    let request = GenerationRequest::new("gemma3:1b".to_string(), prompt).format(FormatType::Json);
+
+    println!("Calling Ollama (model: gemma3:1b)...");
+
+    let res = ollama.generate(request).await?;
+
+    println!("Ollama responded!");
+    println!("Raw response:\n{}", res.response);
+
+    let parsed: ParsedInventory = serde_json::from_str(&res.response)?;
+
+    let items = parsed
+        .items
+        .into_iter()
+        .map(|pi| Item {
+            name: pi.name,
+            quantity: pi.quantity,
+            bin_id: bin_id.clone(),
+            location: location.clone(),
         })
-        .collect()
+        .collect();
+
+    Ok(items)
 }
 
 fn save_items_to_db(items: &[Item]) -> rusqlite::Result<()> {
