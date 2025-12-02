@@ -1,5 +1,5 @@
 [package]
-name = "inventory-tracker"
+name = "treasure_trove"
 version = "0.1.0"
 edition = "2024"
 
