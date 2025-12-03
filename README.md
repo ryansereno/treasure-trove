@@ -1,6 +1,6 @@
 # Treasure Trove
 
-<img src="static/logo.jpg" alt="Treasure Trove logo" width="200" align="center" /
+<img src="static/logo.jpg" alt="Treasure Trove logo" width="200" align="center" />
 
 A household ledger for tools and treasures:
 
