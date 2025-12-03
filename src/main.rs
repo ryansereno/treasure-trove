@@ -261,7 +261,7 @@ async fn llm_parse(raw: &str) -> Result<Vec<ParsedItem>, Box<dyn Error + Send + 
         Input text will be multiple items, sometimes separated by commas or newlines but not always.        Example:
         
           3 boxes of nails, hammer 10 screws
-          wrench
+          couple of wrenchs
         
         Rules:
         - Split the text into separate items.
@@ -275,8 +275,10 @@ async fn llm_parse(raw: &str) -> Result<Vec<ParsedItem>, Box<dyn Error + Send + 
         
         {{
           "items": [
+            {{ "name": "box of nails", "quantity": 3 }},
             {{ "name": "hammer", "quantity": 1 }},
-            {{ "name": "box of nails", "quantity": 3 }}
+            {{ "name": "screws", "quantity": 10 }},
+            {{ "name": "wrench", "quantity": 2 }}
           ]
         }}
         
