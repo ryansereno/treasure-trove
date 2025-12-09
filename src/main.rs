@@ -491,22 +491,41 @@ fn save_items_tx(tx: &rusqlite::Transaction, items: &[Item]) -> rusqlite::Result
 }
 
 fn print_zebra_label(items: &[Item]) -> Result<(), Box<dyn std::error::Error>> {
-    let mut buffer = String::new();
+    let mut zpl_body = String::new();
+    let mut y = 20;
+
     for item in items {
-        let _ = writeln!(&mut buffer, "{} x {}", item.quantity, item.name);
+        zpl_body.push_str(&format!(
+            "^FO20,{}^ADN^FD{} x {}^FS\n",
+            y,
+            item.quantity,
+            item.name
+        ));
+        y += 22; 
     }
+
+    let zpl = format!(
+        "^XA\
+        ^PW812\
+        ^LH0,0\
+        {body}\
+        ^XZ",
+        body = zpl_body
+    );
 
     const PRINTER_NAME: &str = "zebra";
 
-    let mut child = Command::new("lp") //lp is the command for CUPS
+    let mut child = std::process::Command::new("lp")
         .arg("-d")
         .arg(PRINTER_NAME)
+        .arg("-o")
+        .arg("raw")
         .arg("-")
-        .stdin(Stdio::piped())
+        .stdin(std::process::Stdio::piped())
         .spawn()?;
 
     if let Some(stdin) = &mut child.stdin {
-        stdin.write_all(buffer.as_bytes())?;
+        stdin.write_all(zpl.as_bytes())?;
     }
 
     let status = child.wait()?;
@@ -522,7 +541,6 @@ fn choose_container(
     container_select: Option<i64>,
     container_new: Option<String>,
 ) -> rusqlite::Result<Option<i64>> {
-    // If user typed a new container, that wins
     if let Some(new_name) = normalize_optional(container_new) {
         // Insert if it doesn't exist
         tx.execute(
@@ -544,7 +562,6 @@ fn choose_container(
     Ok(container_select)
 }
 
-// Normalize empty strings to None
 fn normalize_optional(opt: Option<String>) -> Option<String> {
     opt.and_then(|s| {
         let trimmed = s.trim();
