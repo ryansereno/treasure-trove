@@ -177,6 +177,60 @@ async fn handle_submit(Form(input): Form<InputForm>) -> Html<String> {
             }]
         }
     };
+    //    let parsed_items = vec![
+    //        ParsedItem {
+    //            name: "chuck with extra jaws".into(),
+    //            quantity: 1,
+    //        },
+    //        ParsedItem {
+    //            name: "chuck tightening rods".into(),
+    //            quantity: 2,
+    //        },
+    //        ParsedItem {
+    //            name: "small faceplate".into(),
+    //            quantity: 1,
+    //        },
+    //        ParsedItem {
+    //            name: "live centers".into(),
+    //            quantity: 2,
+    //        },
+    //        ParsedItem {
+    //            name: "dead center".into(),
+    //            quantity: 1,
+    //        },
+    //        ParsedItem {
+    //            name: "set of carbide turning tools".into(),
+    //            quantity: 1,
+    //        },
+    //        ParsedItem {
+    //            name: "roughing gouges".into(),
+    //            quantity: 1,
+    //        },
+    //        ParsedItem {
+    //            name: "skew chisel".into(),
+    //            quantity: 1,
+    //        },
+    //        ParsedItem {
+    //            name: "parting tools".into(),
+    //            quantity: 2,
+    //        },
+    //        ParsedItem {
+    //            name: "calipers".into(),
+    //            quantity: 1,
+    //        },
+    //        ParsedItem {
+    //            name: "sandpaper".into(),
+    //            quantity: 1,
+    //        },
+    //        ParsedItem {
+    //            name: "box of pen blanks".into(),
+    //            quantity: 1,
+    //        },
+    //        ParsedItem {
+    //            name: "mandrel for pens".into(),
+    //            quantity: 1,
+    //        },
+    //    ];
     //need to convert container_select from Option<String> to Option<i64>
     let container_select_id: Option<i64> = input
         .container_select
@@ -194,18 +248,21 @@ async fn handle_submit(Form(input): Form<InputForm>) -> Html<String> {
     let location = normalize_optional(input.location);
 
     let mut items: Vec<Item> = Vec::new();
+    let mut container_name: Option<String> = None;
 
     {
         let mut conn = Connection::open("inventory.db").expect("failed to open DB");
         let tx = conn.transaction().expect("failed to start transaction");
 
-        let container_id = match choose_container(&tx, container_select_id, container_new) {
-            Ok(id) => id,
-            Err(e) => {
-                eprintln!("Failed to resolve container: {e}");
-                None
-            }
-        };
+        let (container_id, name_opt) =
+            match choose_container(&tx, container_select_id, container_new) {
+                Ok(pair) => pair,
+                Err(e) => {
+                    eprintln!("Failed to resolve container: {e}");
+                    (None, None)
+                }
+            };
+        container_name = name_opt;
 
         items = parsed_items
             .into_iter()
@@ -225,7 +282,7 @@ async fn handle_submit(Form(input): Form<InputForm>) -> Html<String> {
         tx.commit().expect("failed to commit transaction");
     }
 
-    if let Err(e) = print_zebra_label(&items) {
+    if let Err(e) = print_zebra_label(&items, container_name.as_deref()) {
         eprintln!("Failed to print zebra label: {e}")
     }
 
@@ -490,30 +547,37 @@ fn save_items_tx(tx: &rusqlite::Transaction, items: &[Item]) -> rusqlite::Result
     Ok(())
 }
 
-fn print_zebra_label(items: &[Item]) -> Result<(), Box<dyn std::error::Error>> {
+fn print_zebra_label(
+    items: &[Item],
+    container_name: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let header = match container_name {
+        Some(name) => name,
+        None => "",
+    };
     let mut zpl_body = String::new();
-    let mut y = 20; 
+    let mut y = 80;
 
     for item in items {
         zpl_body.push_str(&format!(
-            "^FO20,{}^FB700,3,0,L,0^ADN^FD{} x {}^FS\n",
-            y,
-            item.quantity,
-            item.name
+            "^FO40,{}^FB525,3,0,L,0^ADN^FD{} x {}^FS\n",
+            y, item.quantity, item.name
         ));
 
-        y += 22 * 3;
+        y += 22;
     }
 
     let zpl = format!(
         "^XA\
         ^PW812\
         ^LH0,0\
+        ^FO560,150^GFA,2875,2875,25,,:::::J03FFE0IF8K03I03NF89S04,J07gXF80FFC,J0LF87LF8007F71IF3QFCMF8,J0LF07E01E0ER08J07JFC07E003FC,J0E7FF1FJ03E0ER08J063IFC07EI018,J06I03FJ0EF03J0DM0C8I0C3FFCF87F00E1,J06007FF800F07818I0D9K01CB00183F8I07IFE3,J0703IF80780781CI07FI0807FE00307FEI078I03,J0307IFCI01FC0EI03E001801FE00607IF007FI07,J038E0F9CI031E07007FE041800FF80C0FE0300FFE00E,J03801E0EI0E1F0380IFC61F01BE01C1FEJ0F87C0C,J0180301F00383F80C03FFE3BC03F80383FFI01F80F1C,J01C3C07F80607FC0603F601F80E4C0607E38001FE0018,K0C001C78180E3C03027207F808440C0FE1C003FF0018,K0E00703C70183E01803207FE0080381FF06007C7C03,K0600C03C00603F00E01201838080703F38180F80F03,K070700EE00C0C78018I01J081C07F8E063F80386,K03800387030183E00F8003K0700FFC7003FE01C4,K03800707860303F003EM01E03FCE1807E3800C,K01C01C0FC8060C7C007M0F007F870C07E1F808,L0C0701CE018187F001F8J07C00FFC3860FF03E18,L0E04071FI0307BC003EI0FE003F8E0C00FFC0018,L06I0E3F80060C1F8001IFJ07F860601F9F003,L03001873C00C181BFO01F0C30303FC7806,L018030E3F0183031F8N0FF871800F9E1C06,L0180C1C7F83060211FCK01FF9830C01F87060C,M0C0030E7C20C0631FFEI01IF9C18603FC1800C,M04006183EJ0C613FFC3JFB8C0C2079E0E018,M06018307EI0184233KFE71860400F8E07038,M03I0608FI010C621JFEE30C30201FC70387,M01I0C10FC0021846363F18630410103DC3800E,N0801820BEI01084263B0821860800FCE1C00C,N04030411F800218426330C3083I01FC70E01C,N06020831FC00410844330C10C1I03FC306038,N038010617EI02084433041041I0F8E38307,N01C020C21F800610843184186I01F861C10E,K06I0E041861FF00400843186082I0FFC60C01C,K0CI070010C17FF08008C318208I03F9C306038,J01CI038021823IF0010C30820C001FF0E18307,J0388001C001061IF80308308004007E3861C30E,J0398I0E0060C33FFCI08M01E61870C11C0033,J0618I0700C0821IFE008M0FE60C3060180073,J0E3J0380018431IFO03FE30C10303800C6,J0C3J01E003082187FCM03FE6386180060018C,J086K0F0020863063JF801FFEE73861800C00318,K0CK0380010C20C3OFC631C6080380023,001818K01C003084187OF8631C30C06I02,007EN0700210C1071LF9FC631C3040C,00FF8M0380421830E00KF9FC218E1843800E,00C3E0CL0E0041861F007JF8FE2186I07001F84,00E0F0CL038083041FF01JFCFE3082001C0031CE,00E07FCL01E002083BFC0JFCE6308200380030EF,00C01F8M0380600707F01FFCC6210C2006I020FF,K02O0E0C00F81F80FC8E6318I01CI0207E,U070801FF07F07CCE731J07L03E,U01F803FFE0F8FCC6711I03C,V07C0783F87DFCC6311I0E,K0EP01F1F80FE3FFC4639101F8,00180FQ07FF801F1FEC661900F8,00381FQ01IF0070FE446I0FC,00381BS0FFC039FCK0FCP078,00183T0E1F01FFE8041FEN0181F8,00383S01C0FC0MFEM060301FC,00383S03803F0FF7IFCN0F070398,00383S0EI078FES0F8E038,00383R038I03CFCS0DCC03,00383R0EJ01FFCT0F806,003831P038K0FF8T07806,003833P0EL0FFU07806,003833O03CK01FEU0F806,00303FO078K03FCU0FC06,00303EO0EJ0303F8T01CE06,002018N038J07077U038F07,T07K070EV03870318,T0E01I071EV070783B8,S01C01800E1CV0E0381F8,S03I0C01E3CU01E03C0E,S06I0C07C78U01C01C,S0CI0C3F8F8U01C,R018I0C7F1F,R018300C7C1E,R030701CF03C,R060E009F078,R061E389E0F,R0C3C799E1F,Q01C7C799E1E,Q018F8F31E38,Q031F9D23FF,Q021B1927FE,Q06323B3FFC,Q06723B1FFC,Q0C667103F8,Q09C4E187F,P0198CE1FF7,P01F09C0EE6,P01E19C006E,P0181B800FE,R01B800FC,R01FI0FC,R01EI0F8,R03CI0F8,R01J0F,V01F,:W0E,W04,,::^FS\
+        ^FO40,40^FB525,3,0,L,0^AEN,20,20^FD{header}^FS\
         {body}\
         ^XZ",
         body = zpl_body
     );
-
+    println!("Generated ZPL:\n{}", zpl);
     const PRINTER_NAME: &str = "zebra";
 
     let mut child = std::process::Command::new("lp")
@@ -541,26 +605,35 @@ fn choose_container(
     tx: &Transaction,
     container_select: Option<i64>,
     container_new: Option<String>,
-) -> rusqlite::Result<Option<i64>> {
+) -> rusqlite::Result<(Option<i64>, Option<String>)> {
     if let Some(new_name) = normalize_optional(container_new) {
-        // Insert if it doesn't exist
+        //insert new container if not exists
         tx.execute(
             "INSERT OR IGNORE INTO containers (name) VALUES (?1)",
             params![&new_name],
         )?;
 
-        // Fetch id for that name
         let id: i64 = tx.query_row(
             "SELECT id FROM containers WHERE name = ?1",
             params![&new_name],
             |row| row.get(0),
         )?;
 
-        return Ok(Some(id));
+        return Ok((Some(id), Some(new_name)));
     }
 
-    // Otherwise, use selected id (or None)
-    Ok(container_select)
+    if let Some(id) = container_select {
+        //lookup container name
+        let name: String = tx.query_row(
+            "SELECT name FROM containers WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )?;
+
+        return Ok((Some(id), Some(name)));
+    }
+    //no container selected or created
+    Ok((None, None))
 }
 
 fn normalize_optional(opt: Option<String>) -> Option<String> {
