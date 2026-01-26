@@ -7,7 +7,7 @@
 - supports new or 20-year-old Zebra label printers via CUPS and ZPL
 - single-file Rust backend
 - SQLite database
-- server-side rendered, pure HTML website
+- server-side rendered, pure HTML web "app"
 - text parsing handled by a ollama/ local LLM (optional)
 
 ## Overview
